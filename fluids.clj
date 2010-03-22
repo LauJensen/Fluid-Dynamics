@@ -9,13 +9,19 @@
 
 (defn nth! [s idx] (nth s (mod idx (count s))))
 
-(defn IX [obj x y]
-  (if (or (neg? x)
-	  (neg? y)
-	  (>= x (-> obj first count))
-	  (>= y (-> obj count)))
-    (if (seq (ffirst obj)) [0 0] 0)
-    (-> (obj y) x)))
+(defn IX
+  ([obj x retr]
+     (if (or (neg? x) (>= x (count obj)))
+       retr
+       (obj x)))
+  ([obj x y retr]
+     (if (or (neg? x)
+	     (neg? y)
+	     (>= x (count obj))
+	     (>= y (count obj)))
+       retr
+       ((obj y) x))))
+  
 
 (declare diffuse-board)
 
@@ -62,10 +68,10 @@
   (let [row (transient row)]
     (dotimes [idx (count row)]
       (assoc! row idx
-	      (let [above (nth! above idx)
-		    left  (nth! row   (dec idx))
-		    right (nth! row   (inc idx))
-		    below (nth! below idx)]
+	      (let [above (IX above idx       0)
+		    left  (IX row   (dec idx) 0)
+		    right (IX row   (inc idx) 0)
+		    below (IX below idx       0)]
 		(if (and (zero? left) (zero? right)
 			 (zero? above) (zero? below))
 		  0
@@ -115,17 +121,17 @@
 
 		t1          (- y j0)
 		t0          (- 1 t1)
-		old-density (nth! (nth! densities i) j)
-		new-density (+  (* s0 (+ (* t0 (nth! (nth! densities j0) i0))
-					 (* t1 (nth! (nth! densities j0) i1))))
-				(* s1 (+ (* t0 (nth! (nth! densities j1) i0))
-					 (* t1 (nth! (nth! densities j1) i1)))))]
-	    (assoc! board j (assoc (nth! board j) i
+		old-density (IX densities i j 0) 
+		new-density (+  (* s0 (+ (* t0 (IX densities i0 j0 0))
+					 (* t1 (IX densities i1 j0 0))))
+				(* s1 (+ (* t0 (IX densities i0 j1 0))
+					 (* t1 (IX densities i1 j1 0)))))]
+	    (assoc! board j (assoc (IX board j [0 0]) i
 				   (min 255 new-density))))))
       (persistent! board)))
 
 (defn project [densities velocities]
-  (...
+  nil)
 
 ;; Rendering
 
