@@ -93,13 +93,6 @@
 	
 ;; Diffusion
 
-(defn stabilize [max f]
-  (loop [n max state (f)]
-    (let [next-state (f)]
-      (if (or (zero? n) (= state next-state))
-	state
-	(recur (dec n) next-state)))))
-
 (defn set-bounds [arr b]
   (let [N      (int (- (count arr) (int 2)))
 	n1     (unchecked-inc N)	
@@ -129,13 +122,15 @@
 (defmacro map! [f lookup collection]
   `(let [[w# h#] [(count ~lookup) (-> ~lookup first count)]]
      (let [board# (make-array Double/TYPE h# w#)]
-       (do-board [w# h#]       
+       (dotimes [k# (int 20)]
+	 (do-board [w# h#]       
 	    (let [~'above  (aget! ~'doubles ~lookup (unchecked-dec ~'i) ~'j)
 		  ~'below  (aget! ~'doubles ~lookup (unchecked-inc ~'i) ~'j)
 		  ~'left   (aget! ~'doubles ~lookup ~'i (unchecked-dec ~'j))
 		  ~'right  (aget! ~'doubles ~lookup ~'i (unchecked-inc ~'j))
 		  ~'self   (aget! ~'doubles ~lookup ~'i ~'j)]
 	      (aset! ~'doubles board# (int ~'i) (int ~'j) ~f)))
+	 (set-bounds board# 0))
        board#)))
 
 (defn diffuse-board
@@ -144,11 +139,10 @@
 	dr         (* *dt* diffusion sz sz)
 	dconst     (* 4 dr)
 	d1         (new-array sz sz)]
-   (-> (map! (/ (+ self (* dr (+ (+ above below) (+ left right)))) dconst)
-	     board d1)
-	(set-bounds b))))
+    (map! (/ (+ self (* dr (+ (+ above below) (+ left right)))) dconst)
+	  board d1)))
 
-(defn advection [densities velocities]
+(defn advection [densities velocities b]
   (let [[w h] [(count densities) (-> densities first count)]
 	[u v] velocities
 	retr  (new-array w h)
@@ -175,6 +169,7 @@
 			       (* t1 (aget! doubles densities i0 j1))))
 		      (* s1 (+ (* t0 (aget! doubles densities i1 j0))
 			       (* t1 (aget! doubles densities i1 j1))))))))
+    (set-bounds retr b)
     retr))
 
       
@@ -245,13 +240,15 @@
 (defn density-step [d v sources]
   (when-let [s (seq @sources)] (swap! d add-sources s))
   (swap! d diffuse-board 0 1)
-  (swap! d advection v))
+  (swap! d advection v 0))
 
 (defn velocity-step [velocities]
   (let [[u v] @velocities]
-    (reset! velocities [(diffuse-board v 1 1) (diffuse-board u 1 1)])
+    (reset! velocities [(diffuse-board u 1 1)
+			(diffuse-board v 2 1)])
     (swap!  velocities project)
-    (reset! velocities [(advection u @velocities) (advection v @velocities)])
+    (reset! velocities [(advection u @velocities 1)
+			(advection v @velocities 2)])
     (swap!  velocities project)))
 
 (defn dynamics [densities velocities sources panel]
