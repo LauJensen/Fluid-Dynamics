@@ -3,13 +3,7 @@
         '(java.awt.event MouseListener)
         '(javax.swing JFrame JPanel))
 
-(set! *warn-on-reflection* false)
-
 ;; Helpers
-
-;(defn aset! [arr #^Integer x #^Integer y v]
- ; (let [#^doubles f (aget #^objects arr x)]
-  ;  (aset f y (double v))))
 
 (defmacro aget!
   ([array y]      `(aget ~(vary-meta array assoc :tag 'doubles) ~y))
@@ -38,21 +32,21 @@
 	     (do ~@body)
 	     (recur (unchecked-inc ~'j))))
 	 (recur (unchecked-inc ~'i))))))
-(declare diffuse-board)
 
-(def *dt* 1.0)
-
+(def *dt* (double 1.0))
 
 (defn up-array [orig]
   (let [[u v] orig
 	[w h] [(count v) (-> v first count)]]
-    (do-board [w h]  (aset! v i j -0.5))
+    (do-board [w h]
+	      (aset! u i j 0)
+	      (aset! v i j -1.5))
     [u v]))
 
 (defn topdown-array [orig]
   (let [[u v] orig
 	[w h] [(count v) (-> v first count)]]
-    (do-board [w h]  (aset! v i j (if (>= j (/ h 2)) -0.5 0.5)))
+    (do-board [w h]  (aset! v i j (if (>= j (/ h 2)) -1.5 1.5)))
     [u v]))
 
 (defn randr-array [orig]
@@ -69,6 +63,7 @@
       (print (format "%2.2f  " cell)))
     (println)))
 
+(declare diffuse-board)
 (defn diff-test [n board]
   (println "-[:init]---------------------------------------------------")
   (show-board board)
@@ -84,134 +79,141 @@
 
 (defn add-sources
   [board sources]
-  (doseq [[x y] sources] (aset! board x y 255.0))
+  (doseq [[x y] sources] (aset! board x y 1000.0))
   board)
 	
 ;; Diffusion
 
 (defn set-bounds [arr b]
   (let [N      (int (- (count arr) (int 2)))
-	n1     (unchecked-inc N)	
+	n1     (unchecked-inc N)
+	z      (int 0)
 	cswap! (fn [#^Integer x #^Integer y old p]
 		 (aset! arr x y (if p (- old) old)))]
     (loop [i (int 1)]
       (when (<= i N)
-	(cswap! 0  i (aget! arr 1 i) (= b 1))
+	(cswap! z  i (aget! arr 1 i) (= b 1))
 	(cswap! n1 i (aget! arr N i) (= b 1))
-	(cswap! i  0 (aget! arr i 1) (= b 2))
+	(cswap! i  z (aget! arr i 1) (= b 2))
 	(cswap! i n1 (aget! arr i N) (= b 2))
 	(recur (unchecked-inc i))))
-    (aset! arr (int 0) (int 0)
-	   (* 0.5 (+ (aget! arr 1 0)
-		     (aget! arr 0 1))))
-    (aset! arr (int 0) n1
-	    (* 0.5 (+ (aget! arr 1 n1)
-		      (aget! arr 0 N))))
-    (aset! arr n1 (int 0)
-	    (* 0.5 (+ (aget! arr N 0)
-		      (aget! arr n1 1))))
-    (aset! arr n1 n1
-	    (* 0.5 (+ (aget! arr N n1)
-		      (aget! arr n1 N))))
+    (aset! arr z z  (* 0.5 (+ (aget! arr 1 z)  (aget! arr z 1))))
+    (aset! arr z n1 (* 0.5 (+ (aget! arr 1 n1) (aget! arr z N))))
+    (aset! arr n1 z (* 0.5 (+ (aget! arr N z)  (aget! arr n1 1))))
+    (aset! arr n1 n1(* 0.5 (+ (aget! arr N n1) (aget! arr n1 N))))
     arr))
 
-(defmacro map! [f lookup collection]
+(defmacro map! [f lookup]
   `(let [[w# h#] [(count ~lookup) (-> ~lookup first count)]]
      (let [board# (make-array Double/TYPE h# w#)]
-       (dotimes [k# (int 20)]
-	 (do-board [w# h#]       
-	    (let [~'above  (aget! ~lookup (unchecked-dec ~'i) ~'j)
-		  ~'below  (aget! ~lookup (unchecked-inc ~'i) ~'j)
-		  ~'left   (aget! ~lookup ~'i (unchecked-dec ~'j))
-		  ~'right  (aget! ~lookup ~'i (unchecked-inc ~'j))
-		  ~'self   (aget! ~lookup ~'i ~'j)]
-	      (aset! board# (int ~'i) (int ~'j) ~f)))
-	 (set-bounds board# 0))
-       board#)))
+       (do-board [w# h#]       
+		 (let [~'above  (double (aget! ~lookup (unchecked-dec ~'i) ~'j))
+		       ~'below  (double (aget! ~lookup (unchecked-inc ~'i) ~'j))
+		       ~'left   (double (aget! ~lookup ~'i (unchecked-dec ~'j)))
+		       ~'right  (double (aget! ~lookup ~'i (unchecked-inc ~'j)))
+		       ~'self   (double (aget! ~lookup ~'i ~'j))]
+		   (aset! board# ~'i ~'j ~f)))
+	 (set-bounds board# 0))))
 
 (defn diffuse-board
-  [board b diffusion]
+  [board b diffusion dt]
   (let [sz         (count board)
-	dr         (* *dt* diffusion sz sz)
-	dconst     (* 4 dr)
-	d1         (new-array sz sz)]
-    (map! (/ (+ self (* dr (+ (+ above below) (+ left right)))) dconst)
-	  board d1)))
+	dr         (double (* dt diffusion sz sz))
+	dconst     (double (* 4 dr))]
+    (map! (/ (double (+ self (* dr (+ (double (+ above below))
+				      (double (+ left right))))))
+	     dconst) board)))
 
 (defn advection [densities velocities b]
   (let [[w h] [(count densities) (-> densities first count)]
 	[u v] velocities
-	retr  (new-array w h)
+	retr  (make-array Double/TYPE w h)
+	half  (double 0.5)
 	[w h] [(unchecked-dec w) (unchecked-dec h)]]
     (do-board [w h]
-      (let [x  (- i (* *dt* (aget! u i j)))
-	    y  (- j (* *dt* (aget! v i j)))
-	    x  (cond (< x 0.5)       0.5
-		     (> x (+ 0.5 w)) (+ 0.5 (unchecked-dec w))
-		     :else x)
-	    y  (cond (< y 0.5)       0.5
-		     (> y (+ 0.5 h)) (+ 0.5 (unchecked-dec h))
-		     :else y)
+      (let [x  (- (int i) (double (aget! u i j)))
+	    y  (- (int j) (double (aget! v i j)))
+	    x  (cond (< x half)       half
+		     (> x (+ half w)) (double (+ half (unchecked-dec w)))
+		     :else (double x))
+	    y  (cond (< y half)       half
+		     (> y (+ half h)) (double (+ half (unchecked-dec h)))
+		     :else (double y))
 	    i0  (int x)
 	    i1  (unchecked-inc i0)
 	    j0  (int y)
 	    j1  (unchecked-inc j0)
-	    s1  (- x i0)
-	    s0  (- 1 s1)
-	    t1  (- y j0)
-	    t0  (- 1 t1)]
+	    s1  (double (- x i0))
+	    s0  (double (- (int 1) s1))
+	    t1  (double (- y j0))
+	    t0  (double (- (int 1) t1))]
 	(aset! retr i j
-		   (+ (* s0 (+ (* t0 (aget! densities i0 j0))
-			       (* t1 (aget! densities i0 j1))))
-		      (* s1 (+ (* t0 (aget! densities i1 j0))
-			       (* t1 (aget! densities i1 j1))))))))
-    (set-bounds retr b)
-    retr))
-
+	       (+
+		#^Double
+		(* s0 (+ (* t0 (double (aget! densities i0 j0)))
+			 (* t1 (double (aget! densities i0 j1)))))
+		#^Double
+		(* s1 (+ (* t0 (double (aget! densities i1 j0)))
+			 (* t1 (double (aget! densities i1 j1)))))))))
+    
+    (set-bounds retr b)))
       
 (defn project [velocities]
   (let [[u v]    velocities
 	[w h]    [(count u) (-> u first count)]
-	r        (/ 1.0 h)
+	r        (double (/ 1.0 h))
 	p        (new-array w h)
 	div      (new-array w h)
 	half     (double 0.5)]
     (do-board [w h]
        (aset! div i j
-		  (* -0.5 r (+ (- (aget! u (unchecked-inc i) j)
-				  (aget! u (unchecked-dec i) j))
-			       (- (aget! v i (unchecked-inc j))
-				  (aget! v i (unchecked-dec j)))))))
-    (set-bounds div 0)
-    (set-bounds p 0)
-    (dotimes [k 20]
+	      (* (double -0.5) r
+		 (+ #^Double
+		    (- (double (aget! u (unchecked-inc i) j))
+		       (double (aget! u (unchecked-dec i) j)))
+		    #^Double
+		    (- (double (aget! v i (unchecked-inc j)))
+		       (double (aget! v i (unchecked-dec j))))))))
+    (let [div (set-bounds div 0)
+	  p   (set-bounds p   0)]
       (do-board [w h]
-		(aset! p i j
-		 (/ (+ (+ (aget! div i j)
-			  (aget! p (unchecked-dec i) j))
-		       (+ (aget! p (unchecked-inc i) j)
-			  (aget! p i (unchecked-dec j)))
-		       (aget! p i (unchecked-inc j))) (int 4))))
-      (set-bounds p 0))
-    (do-board [w h]
-      (aset! u i j
-	     (- (aget! u i j)
-		(/ (* half (- (aget! p (unchecked-inc i) j)
-			      (aget! p (unchecked-dec i) j)))
-		   r)))
-      (aset! v i j
-	     (- (aget! v i j)
-		(/ (* half (- (aget! p i (unchecked-inc j))
-			     (aget! p i (unchecked-dec j))))
-		   r))))
-    (set-bounds u 1)
-    (set-bounds v 2)
-    [u v]))
+	 (aset! p i j
+		(/ #^Double (+
+			     #^Double
+			     (+ #^Double (double (aget! div i j))
+				#^Double (double (aget! p (unchecked-dec i) j)))
+			     #^Double
+			     (+ #^Double (double (aget! p (unchecked-inc i) j))
+				#^Double (double (aget! p i (unchecked-dec j))))
+			        #^Double (double (aget! p i (unchecked-inc j))))
+		   (double 4))))
+      (let [p (set-bounds p 0)]
+	(do-board [w h]
+		  (aset! u i j
+			 (- #^Double
+			    (double (aget! u i j))
+			    (/ #^Double (* half
+					   #^Double
+					   (- #^Double
+					      (double (aget! p (unchecked-inc i) j))
+					      #^Double
+					      (double (aget! p (unchecked-dec i) j))))
+			       r)))
+		  (aset! v i j
+			 (- #^Double (double (aget! v i j))
+			    (/ #^Double (* half
+					   #^Double
+					   (- #^Double
+					      (double (aget! p i (unchecked-inc j)))
+					      #^Double
+					      (double (aget! p i (unchecked-dec j)))))
+			       r))))
+	[(set-bounds u 1) (set-bounds v 2)]))))
     
 ;; Rendering
 
-(def running (atom true))
-(def show-velocities (atom true))
+(def running         (atom true))
+(def show-velocities (atom false))
 
 (defn render-scene [#^Graphics2D g w h scale board velocities]
   (doto g
@@ -234,24 +236,26 @@
 		           (dec (+ my (* vy scale)))))))))
 
 (defn density-step [d v sources]
-  (when-let [s (seq @sources)] (swap! d add-sources s))
-  (swap! d diffuse-board 0 1)
-);  (swap! d advection v 0))
+  (when-let [s (seq @sources)]
+   (swap! d add-sources s))
+  (swap! d diffuse-board 0 1 2)
+  (swap! d advection v 0))
 
 (defn velocity-step [velocities]
-  (let [[u v] @velocities]
-    (reset! velocities [(diffuse-board u 1 1)
-			(diffuse-board v 2 1)])
-    (swap!  velocities project)
-    (reset! velocities [(advection u @velocities 1)
-			(advection v @velocities 2)])
-    (swap!  velocities project)))
+  (let [drefv @velocities
+	[u v] drefv]
+    (reset! velocities [(diffuse-board u 1 1 2)
+			(diffuse-board v 2 1 2)])
+    (swap! velocities project)
+    (reset! velocities [(advection u drefv 1)
+			(advection v drefv 2)])
+    (swap! velocities project)))
 
 (defn dynamics [densities velocities sources panel]
   (while @running
-;	 (velocity-step velocities)
+	 (velocity-step velocities)
 	 (density-step  densities @velocities sources)
-	 (.repaint panel)))
+	 (.repaint panel)))	 
   
 (defn new-source [e scale sources]
   (swap! sources conj [(int (/ (.getX e) scale)) (int (/ (.getY e) scale))]))
@@ -260,7 +264,7 @@
   (reset! running true)
   (let [densities  (atom (new-array  w h))
 	d0         (make-array Double/TYPE w h)
-	velocities (atom (topdown-array [(new-array w h) (new-array w h)]))
+	velocities (atom (randr-array [(new-array w h) (new-array w h)]))
 	sources    (atom [])
 	panel (doto (proxy [JPanel] []
 		      (paint [g] (render-scene g w h scale
@@ -271,9 +275,10 @@
 	 (windowClosing [_] (reset! running false))))
       (.addMouseListener    (proxy [java.awt.event.MouseListener] []
 	 (mouseExited     [e] nil)
-	 (mouseReleased   [e] nil)
-	 (mousePressed    [e] nil)
 	 (mouseEntered    [e] nil)
+	 (mouseReleased   [e] nil)
+	 
+	 (mousePressed    [e] nil)
 	 (mouseClicked    [e] (if (= java.awt.event.MouseEvent/BUTTON1
 				     (.getButton e))
 				(new-source e scale sources)
@@ -283,4 +288,5 @@
       .pack .show
       (.setLocation 400 200)
       (.add panel))
-    (future (dynamics densities velocities sources panel))))
+    (dynamics densities velocities sources panel)))
+    
