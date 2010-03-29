@@ -296,9 +296,7 @@
       (.addMouseListener       (mouse-click sources scale))
       (.addMouseMotionListener (mouse-move  mouse densities velocities scale w))
       (.setSize                (* scale w) (* scale  h))
-      (.setUndecorated true)
       .pack .show
-      (.setLocation 390 150)
       (.add panel))
     (future (render panel 20))
     (future (dynamics densities velocities sources panel))))
