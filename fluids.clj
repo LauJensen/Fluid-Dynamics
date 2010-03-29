@@ -59,7 +59,7 @@
 (defn topdown-array [orig]
   (let [[u v] orig
 	[w h] [(count v) (-> v first count)]]
-    (do-board [w h]  (aset! v i j (if (>= j (/ h 2)) -1.5 1.5)))
+    (do-board [w h]  (aset! v i j (if (>= j (/ h 2)) -0.5 0.5)))
     [u v]))
 
 (defn randr-array [orig]
@@ -69,12 +69,6 @@
 	      (aset! u i j (- 1.0 (rand 2)))
 	      (aset! v i j (- 1.0 (rand 2))))
     [u v]))
-
-(defn show-board [b]
-  (doseq [row b]
-    (doseq [cell row]
-      (print (format "%2.2f  " cell)))
-    (println)))
 
 ;; Sources
 
